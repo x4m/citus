@@ -413,6 +413,7 @@ CitusBeginReadOnlyScan(CustomScanState *node, EState *estate, int eflags)
 					Task *task = CitusMakeNode(Task);
 					task->taskType = READ_TASK;
 					task->anchorShardId = shardInterval->shardId;
+					task->anchorDistributedTableId = relationId;
 					task->taskPlacementList = placementList;
 					task->queryCount = 1;
 					task->parametersInQueryStringResolved = true;
@@ -439,6 +440,19 @@ CitusBeginReadOnlyScan(CustomScanState *node, EState *estate, int eflags)
 
 					/* executor reads from scanState->distributedPlan */
 					scanState->distributedPlan = originalDistributedPlan;
+
+					/*
+					 * Cache a local plan for local execution so the local
+					 * executor can use it instead of trying to get a query
+					 * string from the task (which has TASK_QUERY_NULL).
+					 */
+					if (IsLocalPlanCachingSupported(workerJob,
+													originalDistributedPlan))
+					{
+						CacheLocalPlanForShardQuery(task,
+													originalDistributedPlan,
+													estate->es_param_list_info);
+					}
 
 					return;
 				}
@@ -511,7 +525,8 @@ CitusBeginReadOnlyScan(CustomScanState *node, EState *estate, int eflags)
 	 */
 	if (EnablePreparedStatementCaching && savedJobQuery != NULL)
 	{
-		foreach_ptr(Task, task, currentJob->taskList)
+		Task *task = NULL;
+		foreach_declared_ptr(task, currentJob->taskList)
 		{
 			task->preparedStatementPlanId = currentPlan->planId;
 			task->jobQueryForPrepare = savedJobQuery;
@@ -747,7 +762,8 @@ CitusBeginModifyScan(CustomScanState *node, EState *estate, int eflags)
 		 */
 		if (EnablePreparedStatementCaching && savedJobQuery != NULL)
 		{
-			foreach_ptr(Task, task, workerJob->taskList)
+			Task *task = NULL;
+			foreach_declared_ptr(task, workerJob->taskList)
 			{
 				task->preparedStatementPlanId = currentPlan->planId;
 				task->jobQueryForPrepare = savedJobQuery;
@@ -1206,6 +1222,25 @@ CitusEndScanCommon(CitusScanState *scanState)
 		/* queries without partition key are also recorded */
 		CitusQueryStatsExecutorsEntry(queryId, executorType, partitionKeyString);
 	}
+
+	/*
+	 * Clear mutable per-execution state so the cached plan is clean for
+	 * the next execution.  The cache-hit fast paths in CitusBeginReadOnlyScan()
+	 * and CitusBeginModifyScan() store a Task list directly on the original
+	 * plan's workerJob; those Tasks live in the per-execution memory context
+	 * and become dangling after EndScan.  In assert-checking builds the next
+	 * execution's GetDistributedPlan() → copyObject() would traverse freed
+	 * memory without this reset.
+	 *
+	 * Only deferred-pruning plans need this: their taskList is rebuilt
+	 * per-execution.  Non-deferred plans carry their real taskList from
+	 * planning and must not be touched.
+	 */
+	if (workerJob != NULL && workerJob->deferredPruning)
+	{
+		workerJob->taskList = NIL;
+		workerJob->parametersInJobQueryResolved = false;
+	}
 }
 
 
@@ -1235,24 +1270,7 @@ CitusEndScan(CustomScanState *node)
 	 */
 	AdaptiveExecutorEnd(scanState);
 
-	/*
-	 * Clear mutable per-execution state so the cached plan is clean for
-	 * the next execution.  The cache-hit fast paths in CitusBeginReadOnlyScan()
-	 * and CitusBeginModifyScan() store a Task list directly on the original
-	 * plan's workerJob; those Tasks live in the per-execution memory context
-	 * and become dangling after EndScan.  In assert-checking builds the next
-	 * execution's GetDistributedPlan() → copyObject() would traverse freed
-	 * memory without this reset.
-	 *
-	 * Only deferred-pruning plans need this: their taskList is rebuilt
-	 * per-execution.  Non-deferred plans carry their real taskList from
-	 * planning and must not be touched.
-	 */
-	if (workerJob != NULL && workerJob->deferredPruning)
-	{
-		workerJob->taskList = NIL;
-		workerJob->parametersInJobQueryResolved = false;
-	}
+
 }
 
 

@@ -397,6 +397,7 @@ OutJobFields(StringInfo str, const Job *node)
 	WRITE_NODE_FIELD(partitionKeyValue);
 	WRITE_NODE_FIELD(localPlannedStatements);
 	WRITE_BOOL_FIELD(parametersInJobQueryResolved);
+	WRITE_UINT_FIELD(colocationId);
 }
 
 
@@ -585,6 +586,7 @@ OutTask(OUTFUNC_ARGS)
 	WRITE_FLOAT_FIELD(fetchedExplainAnalyzeExecutionDuration, "%.2f");
 	WRITE_BOOL_FIELD(isLocalTableModification);
 	WRITE_BOOL_FIELD(cannotBeExecutedInTransaction);
+	WRITE_INT_FIELD(colocationId);
 }
 
 
