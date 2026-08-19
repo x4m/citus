@@ -302,6 +302,11 @@ ExecuteLocalTaskListExtended(List *taskList,
 													  ALLOCSET_DEFAULT_SIZES);
 
 	Task *task = NULL;
+
+	/* Plan caching is supported only for single-shard queries */
+	bool isSingleTask = (distributedPlan != NULL && distributedPlan->workerJob != NULL &&
+						 list_length(distributedPlan->workerJob->taskList) == 1);
+
 	foreach_declared_ptr(task, taskList)
 	{
 		MemoryContext oldContext = MemoryContextSwitchTo(loopContext);
@@ -341,7 +346,11 @@ ExecuteLocalTaskListExtended(List *taskList,
 			continue;
 		}
 
-		PlannedStmt *localPlan = GetCachedLocalPlan(task, distributedPlan);
+		PlannedStmt *localPlan = NULL;
+		if (isSingleTask)
+		{
+			localPlan = GetCachedLocalPlan(task, distributedPlan);
+		}
 
 		/*
 		 * If the plan is already cached, don't need to re-plan, just

@@ -98,6 +98,11 @@ CacheLocalPlanForShardQuery(Task *task, DistributedPlan *originalDistributedPlan
 		lappend(originalDistributedPlan->workerJob->localPlannedStatements,
 				localPlannedStatement);
 
+	ereport(DEBUG2, (errmsg("Created and cached local plan for shard " UINT64_FORMAT
+							" and local group %d",
+							task->anchorShardId,
+							(int) localPlannedStatement->localGroupId)));
+
 	MemoryContextSwitchTo(oldContext);
 }
 
@@ -231,21 +236,15 @@ ExtractParameterTypesForParamListInfo(ParamListInfo originalParamListInfo,
  * plan in the distributedPlan for the given task if exists.
  *
  * Otherwise, the function returns NULL.
+ *
+ * Callers must ensure that distributedPlan and its workerJob are non-NULL, and
+ * that the job has only one task. IsLocalPlanCachingSupported() establishes
+ * both for the Citus Begin functions, and ExecuteLocalTaskListExtended() in
+ * local_executor.c does so via its isSingleTask check.
  */
 PlannedStmt *
 GetCachedLocalPlan(Task *task, DistributedPlan *distributedPlan)
 {
-	if (distributedPlan == NULL || distributedPlan->workerJob == NULL)
-	{
-		return NULL;
-	}
-
-	if (list_length(distributedPlan->workerJob->taskList) != 1)
-	{
-		/* we only support plan caching for single shard queries */
-		return NULL;
-	}
-
 	List *cachedPlanList = distributedPlan->workerJob->localPlannedStatements;
 	LocalPlannedStatement *localPlannedStatement = NULL;
 
@@ -256,6 +255,10 @@ GetCachedLocalPlan(Task *task, DistributedPlan *distributedPlan)
 		if (localPlannedStatement->shardId == task->anchorShardId &&
 			localPlannedStatement->localGroupId == localGroupId)
 		{
+			ereport(DEBUG2, (errmsg("Found cached local plan for shard " UINT64_FORMAT
+									" and local group %d",
+									task->anchorShardId, (int) localGroupId)));
+
 			/* already have a cached plan, no need to continue */
 			return localPlannedStatement->localPlan;
 		}
