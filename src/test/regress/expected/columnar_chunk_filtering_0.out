@@ -980,7 +980,6 @@ DETAIL:  unparameterized; 1 clauses pushed down
 
 SET hash_mem_multiplier = 1.0;
 \pset footer off
-SELECT columnar_test_helpers.explain_with_pg16_subplan_format($Q$
 EXPLAIN (analyze on, costs off, timing off, summary off, BUFFERS OFF)
 SELECT sum(a) FROM pushdown_test where
 (
@@ -993,23 +992,18 @@ SELECT sum(a) FROM pushdown_test where
 )
 or
 (a > 200000-2010);
-$Q$) as "QUERY PLAN";
 NOTICE:  columnar planner: adding CustomScan path for pushdown_test
 DETAIL:  unparameterized; 0 clauses pushed down
-CONTEXT:  PL/pgSQL function columnar_test_helpers.explain_with_pg16_subplan_format(text) line XX at FOR over EXECUTE statement
 NOTICE:  columnar planner: cannot push down clause: must match 'Var <op> Expr' or 'Expr <op> Var'
 HINT:  Var must only reference this rel, and Expr must not reference this rel
-CONTEXT:  PL/pgSQL function columnar_test_helpers.explain_with_pg16_subplan_format(text) line XX at FOR over EXECUTE statement
 NOTICE:  columnar planner: cannot push down clause: must not contain a subplan
-CONTEXT:  PL/pgSQL function columnar_test_helpers.explain_with_pg16_subplan_format(text) line XX at FOR over EXECUTE statement
 NOTICE:  columnar planner: adding CustomScan path for pushdown_test
 DETAIL:  unparameterized; 1 clauses pushed down
-CONTEXT:  PL/pgSQL function columnar_test_helpers.explain_with_pg16_subplan_format(text) line XX at FOR over EXECUTE statement
-                                                                  QUERY PLAN
+                                                                           QUERY PLAN
 ---------------------------------------------------------------------
  Aggregate (actual rows=1 loops=1)
    ->  Custom Scan (ColumnarScan) on pushdown_test (actual rows=3009 loops=1)
-         Filter: ((((a)::double precision > random()) AND (((a < 200) AND (NOT (SubPlan 1))) OR ((a > 1000) AND (a < 2000)))) OR (a > 197990))
+         Filter: ((((a)::double precision > random()) AND (((a < 200) AND (NOT (ANY (a = (SubPlan 1).col1)))) OR ((a > 1000) AND (a < 2000)))) OR (a > 197990))
          Rows Removed by Filter: 1991
          Columnar Projected Columns: a
          Columnar Chunk Group Filters: (((a < 200) OR ((a > 1000) AND (a < 2000))) OR (a > 197990))
